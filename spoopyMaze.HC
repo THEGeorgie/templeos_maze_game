@@ -77,7 +77,7 @@ U0 Process_maze_row(MazeState *state,I64 row_y, Bool finish){
     I64 c, i, j;
     for(c = 0; c < MAZE_W -1; c++){
 
-        //grid[row_y * 2 + 1][c * 2 + 1].c_type = CELL_EMPTY;
+        grid[row_y * 2 + 1][c * 2 + 1].c_type = CELL_EMPTY;
 
         if(!Same(state, c, c+1) && (finish || RandU16() % 2 == 0)){
             Merge(state, c, c +1, row_y);
@@ -296,13 +296,13 @@ U0 InitGrid(){
         }
     }
 
-    for(y = 0; y < GRID_H; y+=2){
+    for(y = 0; x < GRID_H; y+=2){
         for(x = 0; x < GRID_W; x+=2){
             grid[x][y].c_type = CELL_EMPTY;
         }
     }
-
-
+    
+    
 }
 
 U0 Init()

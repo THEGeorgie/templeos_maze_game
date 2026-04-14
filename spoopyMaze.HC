@@ -19,6 +19,10 @@ $SP,"<2>",BI=2$
 
 #define CELL_EMPTY 0
 #define CELL_WALL  1
+#define CELL_EXIT  2
+
+#define exit_x 0
+#define exit_y 0
 
 
 class Collider{
@@ -49,6 +53,7 @@ U0 Populate(MazeState *state){
         }
     }
 }
+
 
 Bool Same(MazeState *state, I64 c1, I64 c2){
     return state->cells[c1] == state->cells[c2];
@@ -123,7 +128,6 @@ U0 Process_maze_row(MazeState *state,I64 row_y, Bool finish){
         for (j = 0; j < num_drops; j++) {
             I64 idx = memebers[RandU16() % count];
             next_row[idx] = current_id;
-            //Print("Tile_id drop: %d", next_row[idx]);
             grid[idx * 2 + 1][row_y * 2 + 2].c_type = CELL_EMPTY;
         }
         skip_pos:
@@ -135,7 +139,6 @@ U0 Process_maze_row(MazeState *state,I64 row_y, Bool finish){
         }else{
             state->cells[i] = next_row[i];
         }
-        //state->cells[i] = next_row[i];
     }
 }
 
@@ -162,6 +165,7 @@ U0 GenerateMaze() {
 Bool TileSolid(I64 tx, I64 ty)
 {
     if (tx < 0 || ty < 0 || tx >= GRID_W || ty >= GRID_H)
+        
         return TRUE; // clamp to solid so no invalid access
 
     return grid[tx][ty].c_type == CELL_WALL;
@@ -258,34 +262,6 @@ U0 MoveColider(Collider *b, F64 dx, F64 dy)
 Keys keys;
 Player player;
 
-U0 HandleInput(){
-	if(keys.left == TRUE){
-		MoveColider(&player.collider_box, -4, 0);
-	}
-	if(keys.right == TRUE){
-		MoveColider(&player.collider_box, 4, 0);
-	}
-	if(keys.up == TRUE){
-		MoveColider(&player.collider_box, 0, -4);
-	}
-	if(keys.down == TRUE){
-		MoveColider(&player.collider_box, 0, 4);
-	}
-}
-
-U0 DrawIt(CTask *task,CDC *dc)
-{
-	HandleInput;
-	Sprite3B(dc,player.collider_box.x,player.collider_box.y,0,$IB,"<1>",BI=1$);
-    I64 x,y;
-    for(y = 0; y < GRID_H; y++){
-        for(x= 0; x < GRID_W; x++){
-            if(TileSolid(x,y)){
-		        Sprite3B(dc,x*TILE_SIZE,y*TILE_SIZE,0,$IB,"<2>",BI=2$);                
-            }
-        }
-    }
-}
 
 U0 InitGrid(){
     //Vstima vse celice v polno
@@ -311,8 +287,8 @@ U0 Init()
 	QueInit(&player);
 	player.collider_box.x = 5*TILE_SIZE;
 	player.collider_box.y = 5*TILE_SIZE;
-	player.collider_box.w = TILE_SIZE-1;
-	player.collider_box.h = TILE_SIZE-1;
+	player.collider_box.w = TILE_SIZE;
+	player.collider_box.h = TILE_SIZE;
 
 	keys.left = FALSE;
 	keys.right = FALSE;
@@ -320,13 +296,71 @@ U0 Init()
 	keys.up = FALSE;
     
     InitGrid();
-
     GenerateMaze();
-    
+
 }
 
 U0 CleanUp()
 {
+    DocClear;
+}
+
+U0 HandleInput(){
+	if(keys.left == TRUE){
+		MoveColider(&player.collider_box, -4, 0);
+	}
+	if(keys.right == TRUE){
+		MoveColider(&player.collider_box, 4, 0);
+	}
+	if(keys.up == TRUE){
+		MoveColider(&player.collider_box, 0, -4);
+	}
+	if(keys.down == TRUE){
+		MoveColider(&player.collider_box, 0, 4);
+	}
+
+    I64 p_tx = (player.collider_box.x + player.collider_box.w / 2) / TILE_SIZE;
+    I64 p_ty = (player.collider_box.y + player.collider_box.h / 2) / TILE_SIZE;
+    
+    if (p_ty == 19 && !TileSolid(p_tx, p_ty)) {
+        Init;
+    }
+}
+
+U0 DrawIt(CTask *task, CDC *dc)
+{
+  HandleInput;
+
+  I64 p_tx = player.collider_box.x / TILE_SIZE;
+  I64 p_ty = player.collider_box.y / TILE_SIZE;
+  I64 view_dist = 3; 
+
+  I64 x, y;
+  for (y = 0; y < GRID_H; y++) {
+    for (x = 0; x < GRID_W; x++) {
+      
+      // 1. Check if the tile is within the visibility radius
+      if (AbsI64(x - p_tx) <= view_dist && AbsI64(y - p_ty) <= view_dist) {
+        
+        if (TileSolid(x, y)) {
+          // WALLS: Draw the wall sprite (usually black/dark in your BI=2)
+          Sprite3B(dc, x * TILE_SIZE, y * TILE_SIZE, 0, $IB,"<2>",BI=2$);
+        } else {
+          // PATH: Draw a solid WHITE rectangle for the floor
+          dc->color = WHITE;
+          GrRect(dc, x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        }
+
+      } else {
+        // FOG: Draw LIGHTGRAY for everything outside the 3-block radius
+        dc->color = LTGRAY;
+        GrRect(dc, x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+      }
+    }
+  }
+
+  // Draw Player on top
+  Sprite3B(dc, player.collider_box.x, player.collider_box.y, 0, $IB,"<1>",BI=1$);
 }
 
 
@@ -374,7 +408,7 @@ U0 Main(){
 					case CH_SHIFT_ESC:
 					case CH_ESC:
 	  					goto mg_done;
-				}
+				}
 			break;
 			case MSG_KEY_UP:
 				switch(ch){
@@ -399,12 +433,12 @@ U0 Main(){
 			
 		}
   	}
-    mg_done: //Don't goto out of try
+    mg_done:
   }
     catch{
 		PutExcept;
 		SettingsPop;
-		CleanUp;
+		CleanUp;
 		MenuPop;
     }   
 }

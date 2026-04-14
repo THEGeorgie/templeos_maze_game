@@ -11,8 +11,8 @@ $SP,"<2>",BI=2$
 
 #define TILE_SIZE 24
 
-#define GRID_W    64
-#define GRID_H    48
+#define GRID_W    27
+#define GRID_H    22
 
 #define MAZE_W ((GRID_W - 1) / 2)
 #define MAZE_H ((GRID_H - 1) / 2)
@@ -74,72 +74,88 @@ U0 Merge(MazeState *state, I64 sink_cell, I64 target_cell, I64 row_y){
         }
     }
 
-    grid[row_y * 2 + 2][sink_cell * 2 + 1].c_type = CELL_EMPTY;
+    grid[sink_cell * 2 + 2][row_y * 2 + 1].c_type = CELL_EMPTY;
 }
 
-U0 Process_maze_row(MazeState *state,I64 row_y, Bool finish){
+// Define these globals at the top of your file
+I64 exit_grid_x = 0, exit_grid_y = 0;
+
+U0 Process_maze_row(MazeState *state, I64 row_y, Bool finish) {
+  I64 c, i, j;
+
+  // 1. Carve the actual cells and handle horizontal walls
+  for (c = 0; c < MAZE_W; c++) {
+    grid[c * 2 + 1][row_y * 2 + 1].c_type = CELL_EMPTY;
     
-    I64 c, i, j;
-    for(c = 0; c < MAZE_W -1; c++){
+    // Merge adjacent cells if they are different sets
+    if (c < MAZE_W - 1) {
+      if (!Same(state, c, c + 1) && (finish || RandU16() % 2 == 0)) {
+        Merge(state, c, c + 1, row_y);
+      }
+    }
+  }
 
-        grid[row_y * 2 + 1][c * 2 + 1].c_type = CELL_EMPTY;
-
-        if(!Same(state, c, c+1) && (finish || RandU16() % 2 == 0)){
-            Merge(state, c, c +1, row_y);
-        }
+  if (finish) {
+    // FINAL PASS: Ensure the entire row is connected
+    for (i = 0; i < MAZE_W - 1; i++) {
+      if (!Same(state, i, i + 1)) {
+        Merge(state, i, i + 1, row_y);
+      }
     }
 
-    if(finish){
-        for (i = 0; i < MAZE_W -1; i++){
-            if(!Same(state, i,i+1)){
-                Merge(state,i,i+1,row_y);
-            }
-        }
+    // PICK THE EXIT: Center of the last row
+    exit_grid_x = (MAZE_W / 2) * 2 + 1;
+    exit_grid_y = row_y * 2 + 1;
 
-        return;
+    // PHYSICAL EXIT: Carve a hole in the bottom boundary wall
+    grid[exit_grid_x][exit_grid_y + 1].c_type = CELL_EMPTY;
+    return;
+  }
+
+  // 2. Vertical Carving (Drops)
+  I64 next_row[MAZE_W];
+  MemSet(next_row, 0, sizeof(I64) * MAZE_W);
+
+  for (i = 0; i < MAZE_W; i++) {
+    I64 current_id = state->cells[i];
+    Bool already_done = FALSE;
+
+    for (j = 0; j < MAZE_W; j++) {
+      if (state->cells[j] == current_id && next_row[j] != 0) {
+        already_done = TRUE;
+        break;
+      }
     }
 
-    I64 next_row[MAZE_W];
-    MemSet(next_row, 0, sizeof(I64) * MAZE_W);
+    if (already_done){
+        goto next_iter;
+    } 
 
-    for(i = 0; i < MAZE_W; i++){
-        I64 current_id = state->cells[i];
-
-        Bool already_done = FALSE;
-        for(j = 0; j < MAZE_W; j++){
-            if(state->cells[j] == current_id && next_row[j] != 0){
-                already_done = TRUE;
-                break;
-            }
-        }
-
-        if(already_done) goto skip_pos;
-        
-
-        I64 memebers[MAZE_W], count = 0;
-        for(j = 0; j < MAZE_W; j++){
-            if(state->cells[j] == current_id){
-                memebers[count++] = j;
-            }
-        }
-        
-
-        I64 num_drops = Max(1, (RandU16() % count) +1);
-        for (j = 0; j < num_drops; j++) {
-            I64 idx = memebers[RandU16() % count];
-            next_row[idx] = current_id;
-            grid[idx * 2 + 1][row_y * 2 + 2].c_type = CELL_EMPTY;
-        }
-        skip_pos:
+    I64 members[MAZE_W], count = 0;
+    for (j = 0; j < MAZE_W; j++) {
+      if (state->cells[j] == current_id) {
+        members[count++] = j;
+      }
     }
-    
-    for(i = 0; i < MAZE_W; i++){
-        if(next_row[i] == 0){
-            state->cells[i] = 0;
-        }else{
-            state->cells[i] = next_row[i];
-        }
+
+    I64 num_drops = Max(1, (RandU16() % count) + 1);
+    for (j = 0; j < num_drops; j++) {
+      I64 idx = members[RandU16() % count];
+      next_row[idx] = current_id;
+      // Carve the vertical path
+      grid[idx * 2 + 1][row_y * 2 + 2].c_type = CELL_EMPTY;
     }
+    next_iter:
+  }
+
+  // 3. Prepare cells for the next row
+  for (i = 0; i < MAZE_W; i++) {
+    if (next_row[i] == 0) {
+      state->cells[i] = 0;
+    } else {
+      state->cells[i] = next_row[i];
+    }
+  }
 }
 
 
@@ -285,8 +301,8 @@ U0 Init()
 {   
     QueInit(&keys);
 	QueInit(&player);
-	player.collider_box.x = 5*TILE_SIZE;
-	player.collider_box.y = 5*TILE_SIZE;
+	player.collider_box.x = 1*TILE_SIZE;
+	player.collider_box.y = 1*TILE_SIZE;
 	player.collider_box.w = TILE_SIZE;
 	player.collider_box.h = TILE_SIZE;
 
@@ -321,8 +337,8 @@ U0 HandleInput(){
 
     I64 p_tx = (player.collider_box.x + player.collider_box.w / 2) / TILE_SIZE;
     I64 p_ty = (player.collider_box.y + player.collider_box.h / 2) / TILE_SIZE;
-    
-    if (p_ty == 19 && !TileSolid(p_tx, p_ty)) {
+
+    if (p_tx == exit_grid_x && p_ty == exit_grid_y) {
         Init;
     }
 }
@@ -339,20 +355,20 @@ U0 DrawIt(CTask *task, CDC *dc)
   for (y = 0; y < GRID_H; y++) {
     for (x = 0; x < GRID_W; x++) {
       
-      // 1. Check if the tile is within the visibility radius
       if (AbsI64(x - p_tx) <= view_dist && AbsI64(y - p_ty) <= view_dist) {
         
         if (TileSolid(x, y)) {
-          // WALLS: Draw the wall sprite (usually black/dark in your BI=2)
           Sprite3B(dc, x * TILE_SIZE, y * TILE_SIZE, 0, $IB,"<2>",BI=2$);
         } else {
-          // PATH: Draw a solid WHITE rectangle for the floor
           dc->color = WHITE;
+          GrRect(dc, x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        }
+        if (x == exit_grid_x && y == exit_grid_y) {
+          dc->color = GREEN;
           GrRect(dc, x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
         }
 
       } else {
-        // FOG: Draw LIGHTGRAY for everything outside the 3-block radius
         dc->color = LTGRAY;
         GrRect(dc, x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
       }
@@ -379,7 +395,6 @@ U0 Main(){
   
   try {
     while (TRUE){
-        
 
 		switch(GetMsg(&ch,&sc,1<<MSG_KEY_DOWN+1<<MSG_KEY_UP)){
 			case MSG_KEY_DOWN:
@@ -399,6 +414,10 @@ U0 Main(){
 	    					case SC_CURSOR_DOWN:
 								keys.down = TRUE;
 	      					break;
+                            case 'R':
+                                CleanUp;
+                                Init;
+                            break;
 	 					}
 	  				break;
 					case '\n':
@@ -443,4 +462,4 @@ U0 Main(){
     }   
 }
  
-Main;        2                   																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									               2                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+Main;        2                   																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									       																									               2                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
